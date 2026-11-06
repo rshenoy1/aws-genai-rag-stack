@@ -1,0 +1,15 @@
+
+# Local Mock Data Storage Channels
+data_lake/
+vector_db/
+
+# Terraform Internal Cache & State Repositories
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
+# Python Bytecode Cache Artifacts
+__pycache__/
+*.pyc
+
