@@ -13,3 +13,6 @@ vector_db/
 __pycache__/
 *.pyc
 
+
+# Local Study Manual
+understand.md
