@@ -551,3 +551,141 @@ Production applications use strict version control strategies. Local test direct
 *   **Tracked Elements:** Hybrid runtime application modules (`ingest.py`, `query.py`, `queue_system.py`), infrastructure manifests (`main.tf`), and documentation guides (`understand.md`).
 *   **Excluded Elements:** Local data drop directories (`./data_lake/*`), temporary database tracking state dumps (`./vector_db/*`), and runtime hidden infrastructure directories (`.terraform/`).
 
+
+## 29. Project Architecture Final Checklist
+
+*   **Version Control:** Local Git snapshot successfully committed.
+*   **Code Portability:** Flag-driven scripts ready to drop into AWS Lambda.
+*   **Infrastructure Strategy:** Terraform configured for explicit execution.
+*   **Architectural Competency:** Production study guide completely built out.
+
+
+## 31. Local Validation & Testing Instructions
+
+To verify that the entire decoupled architecture functions correctly before pushing to a remote repository, execute the three-phase validation sequence locally.
+
+### Local Test Matrix
+*   **Phase 1 (Storage & Database):** Validates that source documentation is chunked and written to the database folder.
+*   **Phase 2 (Orchestration Engine):** Validates that user questions successfully trigger data context lookups.
+*   **Phase 3 (Load-Leveling Queue):** Validates that concurrent spikes are flattened into single sequential streams.
+
+
+## 32. Advanced Component Testing Guide (Local Frameworks)
+
+When an AWS account is unavailable, advanced components must be verified programmatically using mock frameworks, simulated payloads, and unit test logic.
+
+### 1. Testing API Gateway, Lambda, and S3 Local Paths
+To test these without cloud infrastructure, you pass mock JSON event payloads directly into your Lambda python functions and assert the results.
+
+*   **API Gateway Simulation:** Pass a mock HTTP proxy event dictionary containing a JSON body payload directly into your query Lambda handler.
+*   **S3 Event Notification Simulation:** Pass a mock S3 put-object notification JSON dictionary containing bucket names and file keys directly into your ingestion Lambda handler.
+
+#### Example Unit Test File (`test_core_pipeline.py`)
+Create a test script to validate that your Lambda handlers process S3 inputs and API Gateway requests seamlessly:
+```python
+import unittest
+from unittest.mock import patch, mock_open
+import ingest
+import query
+
+class TestGenAIPipeline(unittest.TestCase):
+
+    def test_lambda_s3_ingestion_payload(self):
+        """Simulates an automatic Amazon S3 upload event trigger hitting Lambda"""
+        mock_s3_event = {
+            "Records": [{
+                "s3": {
+                    "bucket": {"name": "test-data-lake"},
+                    "object": {"key": "handbook.txt"}
+                }
+            }]
+        }
+        # Force local mock testing mode path execution
+        with patch("ingest.ENV_MODE", "LOCAL"):
+            # Verify handler accepts the structural AWS event layout without throwing errors
+            try:
+                ingest.lambda_handler(mock_s3_event, None)
+                success = True
+            except Exception:
+                success = False
+            self.assertTrue(success)
+
+    def test_api_gateway_query_routing(self):
+        """Simulates an API Gateway HTTPS request hitting the query engine"""
+        with patch("query.ENV_MODE", "LOCAL"):
+            response = query.run_query("How many weeks of paternity leave do I get?")
+            self.assertIn("12 weeks", response)
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+---
+
+### 2. Testing Guardrails Locally
+*   **The Strategy:** You write a list of toxic strings, profanities, and mock PII data (e.g., `"My SSN is 000-12-3456"`). 
+*   **The Test Execution:** Pass these toxic inputs into your prompt function. Assert that your local text processing filter catches them, masks them out, or returns a block error *before* the prompt is sent to your mock AI model engine.
+
+---
+
+### 3. Testing Model Evaluations (Evals) Locally
+*   **The Strategy:** Create a static evaluation JSON ground-truth test file containing standard query-and-answer pairs:
+    `{"query": "paternity leave", "expected": "12 weeks"}`
+*   **The Test Execution:** Run your local query engine against this dataset. Use exact string matching or simple character containment algorithms to score the accuracy, checking if the word "12 weeks" is missing from the generated outputs.
+
+---
+
+### 4. Testing High Availability (HA) & Disaster Recovery (DR) Locally
+*   **The Strategy:** You simulate an infrastructure crash by forcefully injecting an artificial error code into your script.
+*   **The Test Execution:** In your script's Bedrock function code, add a toggle flag that forces an `Exception("Bedrock Outage in us-east-1")`. Run the script and assert that your `try/except` block catches the outage and successfully reroutes the request to the secondary backup function endpoint (`us-west-2`).
+
+
+## 33. Interview Strategy Case Study: Scaling Ingestion for Massive Payloads
+
+### Question: "How do you process a 5GB document batch without crashing Lambda or hitting model timeouts?"
+
+### Senior Architectural Solution
+*   **The Problem:** Large binary objects (like 5GB PDFs or ZIP archives) violate Lambda memory limits and trigger 15-minute execution timeouts if parsed synchronously.
+*   **The Architecture Pattern (S3 Multi-Part + Step Functions):**
+    1.  **S3 Chunk Streaming:** Instead of downloading the 5GB file into memory, the ingestion Lambda function uses python stream-reading utilities (like `smart_open` or Boto3 chunks) to stream bytes sequentially.
+    2.  **State Machine Orchestration:** For extreme scale, we replace a single Lambda with **AWS Step Functions**. Step Function Worker A splits the 5GB file into 10MB text fragments and drops them into an intermediate S3 bucket.
+    3.  **Fan-Out Processing:** Each 10MB fragment automatically triggers an isolated parallel worker Lambda function. These worker Lambdas generate the Bedrock embeddings concurrently, pushing chunks directly into **Amazon SQS** or **OpenSearch Serverless**.
+
+
+## 34. Interview Strategy Case Study: Defending Against Regional AI Outages
+
+### Question: "How do you protect your generative AI pipeline against major AWS cloud outages?"
+
+### Senior Architectural Solution
+*   **High Availability Execution:** Deploy API Gateway and Lambda in a Multi-AZ framework. Let AWS serverless layers inherently handle data-center level routing.
+*   **Disaster Recovery Execution (Active-Passive Global Design):**
+    1.  **Storage Mirroring:** Enable S3 Cross-Region Replication (CRR) from `us-east-1` to `us-west-2`.
+    2.  **State Syncing:** Maintain an asynchronous ingestion replica stream to an OpenSearch index cluster in the recovery region.
+    3.  **Global Routing:** Route 53 DNS is configured with active health checking, instantly pointing corporate client apps to the secondary region if the primary entrypoint drops.
+    4.  **Bedrock Regional Circuit Breaker:** The Lambda query orchestrator wraps model invocation logic in an explicit `try/except` block. If `us-east-1` Bedrock triggers a 503 or a quota threshold timeout, the code catches the exception and immediately invokes the `us-west-2` Bedrock model endpoint, preserving a 100% uptime user experience.
+
+
+## 35. Interview Strategy Case Study: Balancing Budgetary and Compliance Controls
+
+### Question: "How do you protect your generative AI pipeline against token cost explosions and data leaks?"
+
+### Senior Architectural Solution
+*   **The CFO Strategy (Cost Management):**
+    1.  **Semantic Model Triage:** Implement an upstream routing Lambda. Lightweight tasks (e.g., classification, summarization) are routed to low-cost models (Claude Haiku). Premium models (Claude Sonnet) are reserved exclusively for complex reasoning.
+    2.  **Prompt Caching:** Enable Bedrock Prompt Caching for the static corporate handbook data. This cuts input token costs by up to 90% for repetitive enterprise queries.
+    3.  **Capacity Selection:** For a 10,000-user rollout with steady traffic, utilize Provisioned Throughput to secure flat-rate hourly billing rather than risking variable, un-capped On-Demand token spikes.
+
+*   **The CISO Strategy (Enterprise Compliance & Safety):**
+    1.  **Native PII Redaction:** Deploy **Amazon Bedrock Guardrails** to automatically intercept inputs and outputs. The native engine detects and masks SSNs, Credit Cards, and proprietary identifiers before text processing occurs.
+    2.  **Denied Topics Policy:** Hardcode strict contextual boundaries within Guardrails to block restricted categories (e.g., source code analysis, competitor comparisons, legal advice).
+    3.  **Zero-Training Compliance Guarantee:** Leverage AWS's official data contract: customer interaction data traveling inside the isolated Virtual Private Cloud (VPC) endpoints is cryptographically sealed and never used to train or improve public foundation models.
+
+
+## 36. Programmatic Implementation: Bedrock API, Guardrails, and Eval Logic
+
+To complete the local prototype, the query orchestrator must explicitly write out the code blocks handling raw Bedrock API invocations, mock input validation guardrails, and real-time output evaluation checks.
+
+### Code Control Flow
+1.  **Input** ──► Check Guardrails (Block PII/Off-topic) ──► If Safe ──►
+2.  **Execution** ──► Invoke Amazon Bedrock Runtime API (`invoke_model`) ──►
+3.  **Validation** ──► Run Eval Engine (Verify response matches context) ──► Output Response
